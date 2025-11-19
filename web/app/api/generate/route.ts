@@ -23,6 +23,24 @@ const scanStore = new Map<string, {
 let activeScanCount = 0;
 const MAX_CONCURRENT_SCANS = 3;
 
+// Helper to check if scan is still in progress
+function getActiveScansCount(): number {
+  let activeCount = 0;
+  const now = new Date();
+
+  for (const [scanId, scan] of scanStore.entries()) {
+    // Count as active if not completed/errored and created within last 30 min
+    if (scan.status !== 'completed' && scan.status !== 'error') {
+      const age = now.getTime() - scan.createdAt.getTime();
+      if (age < 30 * 60 * 1000) { // 30 minutes
+        activeCount++;
+      }
+    }
+  }
+
+  return activeCount;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -108,6 +126,62 @@ export async function GET(request: NextRequest) {
   }
 
   return NextResponse.json(scan);
+}
+
+// DELETE endpoint to reset/clear stuck scans (admin use)
+export async function DELETE(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const action = searchParams.get('action');
+
+  if (action === 'reset-counter') {
+    // Reset the active scan counter
+    const oldCount = activeScanCount;
+    activeScanCount = 0;
+    console.log(`[Admin] Reset active scan counter from ${oldCount} to 0`);
+    return NextResponse.json({
+      message: 'Counter reset',
+      oldCount,
+      newCount: 0
+    });
+  }
+
+  if (action === 'clear-stuck') {
+    // Clear scans that are stuck (older than 30 min and not completed/errored)
+    const now = new Date();
+    let clearedCount = 0;
+
+    for (const [scanId, scan] of scanStore.entries()) {
+      const age = now.getTime() - scan.createdAt.getTime();
+      if (age > 30 * 60 * 1000 && scan.status !== 'completed' && scan.status !== 'error') {
+        scanStore.delete(scanId);
+        clearedCount++;
+        console.log(`[Admin] Cleared stuck scan: ${scanId}`);
+      }
+    }
+
+    return NextResponse.json({
+      message: 'Stuck scans cleared',
+      clearedCount
+    });
+  }
+
+  if (action === 'status') {
+    // Return status info
+    const actualActive = getActiveScansCount();
+    const totalScans = scanStore.size;
+
+    return NextResponse.json({
+      activeScanCounter: activeScanCount,
+      actualActiveScans: actualActive,
+      totalScansInMemory: totalScans,
+      maxConcurrent: MAX_CONCURRENT_SCANS,
+    });
+  }
+
+  return NextResponse.json(
+    { error: 'Invalid action. Use: reset-counter, clear-stuck, or status' },
+    { status: 400 }
+  );
 }
 
 async function processGeneration(scanId: string, domain: string, topics: string[]) {
