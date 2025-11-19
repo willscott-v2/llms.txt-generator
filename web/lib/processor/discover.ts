@@ -43,7 +43,8 @@ export async function discoverOffsiteContent(
         cluster.name,
         cluster.keywords,
         ownDomain,
-        platform.type
+        platform.type,
+        brandName
       );
 
       offsiteContent.push(...scored);
@@ -61,7 +62,9 @@ export async function discoverOffsiteContent(
       cluster.id,
       cluster.name,
       cluster.keywords,
-      ownDomain
+      ownDomain,
+      undefined,
+      brandName
     );
 
     offsiteContent.push(...generalScored);
@@ -76,7 +79,9 @@ export async function discoverOffsiteContent(
         cluster.id,
         cluster.name,
         cluster.keywords,
-        ownDomain
+        ownDomain,
+        undefined,
+        brandName
       );
 
       offsiteContent.push(...authorScored);
@@ -131,7 +136,8 @@ function scoreAndFilterResults(
   clusterName: string,
   keywords: string[],
   ownDomain?: string,
-  platformType?: OffsiteContent['type']
+  platformType?: OffsiteContent['type'],
+  brandName?: string
 ): OffsiteContent[] {
   const scored: OffsiteContent[] = [];
 
@@ -144,10 +150,30 @@ function scoreAndFilterResults(
       continue;
     }
 
-    const score = scoreOffsiteResult(result, clusterName, keywords);
+    // Require brand name to appear in title or snippet if provided
+    if (brandName) {
+      const title = (result.title || '').toLowerCase();
+      const snippet = (result.snippet || '').toLowerCase();
+      const brandLower = brandName.toLowerCase();
 
-    // Lower threshold for platform-specific searches (50) since they're more targeted
-    const threshold = platformType ? 50 : 60;
+      // Check if brand name appears as complete words (not just substring)
+      const brandWords = brandLower.split(/\s+/);
+      const combinedText = `${title} ${snippet}`;
+
+      // Brand must have at least 50% of its words present
+      const matchedWords = brandWords.filter(word =>
+        combinedText.includes(word) && word.length > 2 // ignore short words like "a", "of"
+      );
+
+      if (matchedWords.length < brandWords.length * 0.5) {
+        continue; // Skip if brand not sufficiently represented
+      }
+    }
+
+    const score = scoreOffsiteResult(result, clusterName, keywords, brandName);
+
+    // Higher threshold for platform searches (60) to ensure quality
+    const threshold = platformType ? 60 : 65;
 
     if (score.total >= threshold) {
       scored.push({
@@ -170,16 +196,28 @@ function scoreAndFilterResults(
 function scoreOffsiteResult(
   result: any,
   clusterName: string,
-  keywords: string[]
+  keywords: string[],
+  brandName?: string
 ): OffsiteScore {
   const title = (result.title || '').toLowerCase();
   const snippet = (result.snippet || '').toLowerCase();
   const combined = `${title} ${snippet}`;
   const clusterLower = clusterName.toLowerCase();
 
-  // 1. RELEVANCE (0-20): How well does it match the cluster topic?
-  let relevance = 5; // Base score for appearing in results
-  if (combined.includes(clusterLower)) relevance += 10;
+  // 1. RELEVANCE (0-25): How well does it match the cluster topic and brand?
+  let relevance = 0; // No base score - must earn it
+
+  // Brand name mention (most important)
+  if (brandName) {
+    const brandLower = brandName.toLowerCase();
+    if (title.includes(brandLower)) relevance += 12; // Full brand in title
+    else if (snippet.includes(brandLower)) relevance += 8; // Full brand in snippet
+  }
+
+  // Cluster topic match
+  if (combined.includes(clusterLower)) relevance += 8;
+
+  // Keyword matches
   const keywordMatches = keywords.filter(kw => combined.includes(kw.toLowerCase())).length;
   relevance += Math.min(5, keywordMatches * 2);
 
@@ -233,12 +271,12 @@ function scoreOffsiteResult(
   const total = relevance + salience + engagement + recency + authority;
 
   return {
-    relevance: Math.min(20, Math.max(0, relevance)),
+    relevance: Math.min(25, Math.max(0, relevance)),
     salience: Math.min(20, Math.max(0, salience)),
     engagement: Math.min(20, Math.max(0, engagement)),
     recency: Math.min(20, Math.max(0, recency)),
     authority: Math.min(20, Math.max(0, authority)),
-    total: Math.min(100, Math.max(0, total)),
+    total: Math.min(105, Math.max(0, total)),
   };
 }
 

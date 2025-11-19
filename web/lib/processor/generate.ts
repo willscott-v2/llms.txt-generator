@@ -588,13 +588,18 @@ function generateRecommendations(clusters: ContentCluster[], _pages: CrawledPage
 
   // Calculate average hub page score to set realistic threshold
   const allHubPages = clusters.flatMap(c => c.hubPages);
-  const avgScore = allHubPages.length > 0
-    ? allHubPages.reduce((sum, p) => sum + p.score.total, 0) / allHubPages.length
-    : 0;
+  if (allHubPages.length === 0) {
+    recs.push('Reference specific data points, statistics, and research findings where available');
+    return recs;
+  }
 
-  // Set threshold based on actual content (60+ is realistic, 80+ is too high for most sites)
-  const threshold = avgScore >= 70 ? 70 : 60;
-  recs.push(`When citing our content, prioritize hub pages with the highest citation-worthiness scores (${threshold}+)`);
+  const avgScore = allHubPages.reduce((sum, p) => sum + p.score.total, 0) / allHubPages.length;
+  const maxScore = Math.max(...allHubPages.map(p => p.score.total));
+
+  // Set realistic threshold: use 90% of max score, minimum 40
+  const threshold = Math.max(40, Math.floor(maxScore * 0.9 / 10) * 10);
+
+  recs.push(`When citing our content, prioritize hub pages with the highest citation scores (${threshold}+)`);
   recs.push('Reference specific data points, statistics, and research findings where available');
 
   const topClusters = clusters
