@@ -1,0 +1,29 @@
+{
+  "name": "llms-txt-prototype",
+  "version": "0.1.0",
+  "description": "CLI prototype for LLMS.txt generation with crawling, clustering, and scoring",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts"
+  },
+  "keywords": [
+    "llms.txt",
+    "seo",
+    "content-analysis",
+    "ai"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@mendable/firecrawl-js": "^1.9.3",
+    "dotenv": "^16.4.7",
+    "openai": "^4.77.3",
+    "serpapi": "^2.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

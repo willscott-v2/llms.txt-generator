@@ -35,9 +35,20 @@ export default function ScanPage() {
   useEffect(() => {
     if (!scanId) return;
 
+    let consecutiveErrors = 0;
+    const MAX_CONSECUTIVE_ERRORS = 5;
+
     const pollStatus = async () => {
       try {
-        const response = await fetch(`/api/generate?scanId=${scanId}`);
+        // Add timeout to fetch (10 seconds)
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+        const response = await fetch(`/api/generate?scanId=${scanId}`, {
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
           throw new Error('Failed to fetch scan status');
@@ -45,12 +56,21 @@ export default function ScanPage() {
 
         const data: ScanData = await response.json();
         setScanData(data);
+        consecutiveErrors = 0; // Reset error counter on success
 
         if (data.status === 'error') {
           setError(data.error || 'Unknown error occurred');
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to fetch status');
+        // Only show error if we've had multiple consecutive failures
+        consecutiveErrors++;
+
+        if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+          setError(err instanceof Error ? err.message : 'Failed to fetch status');
+        } else {
+          // Log but don't show error for transient network issues
+          console.log('Polling error (retrying):', err);
+        }
       }
     };
 
