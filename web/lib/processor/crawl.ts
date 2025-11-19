@@ -48,7 +48,18 @@ export async function crawlWebsite(
 
     while (attempts < maxAttempts) {
       await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
-      crawlJob = await firecrawl.getCrawlStatus(crawlId);
+
+      try {
+        crawlJob = await firecrawl.getCrawlStatus(crawlId);
+      } catch (error: any) {
+        // Handle timeout errors - Firecrawl SDK has 60s timeout per request
+        if (error?.code === 'ETIMEDOUT' || error?.message?.includes('timeout')) {
+          logger.info(`Status check timed out, retrying... (${attempts * 5}s elapsed)`);
+          attempts++;
+          continue; // Retry on next iteration
+        }
+        throw error; // Re-throw other errors
+      }
 
       if (crawlJob.status === 'completed') {
         break;
