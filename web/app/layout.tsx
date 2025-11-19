@@ -15,6 +15,9 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "LLMs.txt Generator - Search Influence: AI SEO Experts",
   description: "Generate citation-worthy LLMS.txt files for your website. Help AI models understand and cite your content appropriately with automated content analysis and scoring.",
+  icons: {
+    icon: "https://searchinfluence.com/favicon.ico",
+  },
 };
 
 export default function RootLayout({
