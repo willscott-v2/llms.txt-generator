@@ -177,7 +177,39 @@ Provide more specific hints:
 Review and regenerate until you get topics that align with your goals. You can regenerate as many times as needed.
 
 ### I want to accept topics without interactive prompt
-Currently not supported in the CLI. For non-interactive use, consider modifying the code to skip `reviewTopics()`.
+Use the `--auto-accept` flag:
+
+```bash
+npm start -- https://example.com --topics "SEO,PPC" --auto-accept
+```
+
+This will display the topics for reference but automatically accept them without prompting.
+
+## Additional CLI Features
+
+### Priority URLs
+
+You can specify URLs that must be included in the output, regardless of their citation-worthiness score:
+
+```bash
+npm start -- https://example.com --topics "SEO,PPC" --priority-urls "https://example.com/important-page,https://example.com/key-service"
+```
+
+**Priority URL Routing:**
+- **Internal URLs** (from your domain): Added to topic cluster hub pages with ⭐ priority badge
+- **External URLs** (from other domains): Routed to "Supporting Resources (Off-Site)" section under "Client Priority Resources"
+
+Priority URLs are always included even if they have low citation-worthiness scores, ensuring critical content appears in your LLMS.txt file.
+
+### Recent Updates Detection
+
+The system automatically analyzes publishing frequency and recent content:
+- Extracts publication dates from URLs, metadata, and content
+- Calculates recency window based on publishing patterns (30/60/90/180 days)
+- Categorizes content as news, blog posts, or page updates
+- Shows publishing frequency rating (high/medium/low/static)
+
+This information appears in the "Recent Updates" section of the LLMS.txt output, helping AI systems understand content freshness.
 
 ## Future Enhancements
 
@@ -187,3 +219,5 @@ Potential improvements for the production web app:
 - Topic merging/splitting in the UI
 - Visual topic preview with page counts
 - Export/import topic configurations
+- Web UI for managing priority URLs
+- Manual date override for pages with incorrect extraction

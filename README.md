@@ -16,31 +16,53 @@ LLMS.txt is a structured documentation format that helps AI systems understand a
 
 ## Key Features
 
-- **Automated Website Crawling** - Uses Firecrawl to analyze site structure and extract content
+### Core Functionality
+- **Automated Website Crawling** - Uses Firecrawl v2 to analyze site structure and extract content
 - **AI-Powered Topic Analysis** - GPT-5 identifies business priority topics and content clusters
+- **User-Guided Topics** - Optional topic hints to guide clustering (see [TOPIC-GUIDANCE.md](TOPIC-GUIDANCE.md))
 - **Citation-Worthiness Scoring** - Evaluates pages across 4 dimensions:
   - Quantifiable (data, stats, research)
   - Authority (credentials, citations, methodology)
   - Structure (formatting, schema markup, scannability)
   - Uniqueness (original insights vs commodity content)
 - **Off-Site Content Discovery** - Finds relevant LinkedIn posts, YouTube videos, conference talks via SerpAPI
+- **Social Profile Discovery & Validation** - Automatically discovers and validates official social media accounts with confidence scoring
+
+### Advanced Features (New in Prototype)
+- **Priority URLs** - Guarantee specific URLs are included in output
+  - Internal priority URLs → Hub pages with priority badges
+  - External priority URLs → Supporting Resources section
+- **Recent Updates Detection** - Auto-analyzes publishing frequency and recent content
+  - Smart recency window detection (30/60/90/180 days)
+  - Categorizes as news, blog posts, or page updates
+  - Publishing frequency rating (high/medium/low/static)
+- **Domain-Aware Routing** - Intelligently routes internal vs external priority content to appropriate sections
+
+### Infrastructure
 - **Background Job Processing** - Long-running scans with granular progress tracking
-- **Team Collaboration** - Multi-tenant architecture with email domain-based access control
+- **Railway Deployment** - No timeout limits, persistent containers
+- **Web API & CLI** - Both web interface and command-line tool available
 - **Audit Reports** - Detailed recommendations for improving content citation-worthiness
-- **Email Notifications** - Get notified when scans complete
 
 ## Tech Stack
 
+### Current Prototype (Railway Deployment)
+- **Framework:** Next.js 16.0.3 (App Router)
+- **Hosting:** Railway (persistent containers)
+- **Database:** In-memory storage (Map-based)
+- **APIs:**
+  - Firecrawl v2 (website crawling)
+  - SerpAPI (brand/author searches, social discovery)
+  - OpenAI GPT-5 (content analysis)
+- **Styling:** Tailwind CSS + shadcn/ui
+
+### Planned Production Stack (Future)
 - **Framework:** Next.js 14+ (App Router)
 - **Hosting:** Vercel Pro
 - **Database:** Supabase (PostgreSQL + Auth)
 - **Email:** Resend
-- **APIs:**
-  - Firecrawl (website crawling)
-  - SerpAPI (brand/author searches)
-  - OpenAI GPT-5 (content analysis)
-- **Styling:** Tailwind CSS
 - **Data Fetching:** TanStack Query (React Query)
+- **Background Jobs:** DIY queue system with cron
 
 ## How It Works
 
@@ -241,15 +263,51 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Project Status
 
-This project is currently in the specification/planning phase. The complete architecture is documented in [llms-txt-spec.md](llms-txt-spec.md).
+**Current Status:** Working prototype deployed on Railway
+
+The system is fully functional and generating production-ready LLMS.txt files. The prototype includes:
+
+✅ **Completed Features:**
+- Website crawling with Firecrawl v2
+- GPT-5 topic identification and clustering
+- User-guided topic definition with interactive review
+- Citation-worthiness scoring (4 dimensions)
+- Off-site content discovery via SerpAPI
+- Social profile discovery and validation
+- Priority URLs (internal & external routing)
+- Recent updates detection and analysis
+- Publishing frequency calculation
+- LLMS.txt file generation
+- Audit report generation
+- CLI tool with progress tracking
+- Web API with real-time progress
+- Railway deployment with rate limiting
 
 ### Implementation Roadmap
 
-- [ ] Phase 1: Core Infrastructure (Next.js, Supabase, Auth)
-- [ ] Phase 2: Project Management (CRUD, UI)
-- [ ] Phase 3: Processing Engine (Crawling, Analysis, Discovery)
-- [ ] Phase 4: Progress & Results (Polling, Display, Notifications)
-- [ ] Phase 5: Polish (Admin tools, Error handling, Mobile)
+**Phase 1: Prototype** ✅ Complete
+- [x] Core crawling, analysis, and generation pipeline
+- [x] CLI tool
+- [x] Web API
+- [x] Railway deployment
+
+**Phase 2: Production Features** (Planned - See [llms-txt-spec.md](llms-txt-spec.md))
+- [ ] Supabase authentication and database
+- [ ] Team collaboration and multi-tenancy
+- [ ] Background job queue with cron
+- [ ] Email notifications via Resend
+- [ ] Project management UI
+- [ ] Scan history and versioning
+- [ ] Admin panel
+- [ ] Mobile-responsive design
+
+**Phase 3: Advanced Features** (Future)
+- [ ] Manual topic editing and refinement
+- [ ] Custom scoring weights
+- [ ] Content gap analysis
+- [ ] Competitive benchmarking
+- [ ] API for third-party integrations
+- [ ] Scheduled rescans
 
 ## Support
 
