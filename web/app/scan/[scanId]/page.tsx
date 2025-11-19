@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import GenerationStatus from '@/components/GenerationStatus';
 import { Download, FileText, ExternalLink, TrendingUp, Brain } from 'lucide-react';
+import FeedbackWidget from '@upstash/feedback';
+import '@upstash/feedback/index.css';
 
 interface ScanData {
   status: 'crawling' | 'analyzing' | 'discovering' | 'generating' | 'completed' | 'error';
@@ -126,7 +128,7 @@ export default function ScanPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <button
                 onClick={() => {
-                  const blob = new Blob([JSON.stringify(result?.llmsTxt, null, 2)], {
+                  const blob = new Blob([result?.llmsTxt], {
                     type: 'text/plain',
                   });
                   const url = URL.createObjectURL(blob);
@@ -253,6 +255,14 @@ export default function ScanPage() {
           </div>
         </div>
       </div>
+
+      {/* Feedback Widget */}
+      <FeedbackWidget
+        type="full"
+        user="anonymous"
+        metadata={{ scanId, page: 'results' }}
+        themeColor="#4f46e5"
+      />
     </div>
   );
 }

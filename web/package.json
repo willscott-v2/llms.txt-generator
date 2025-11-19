@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@mendable/firecrawl-js": "^4.6.1",
+    "@upstash/feedback": "^2.0.0",
     "dotenv": "^17.2.3",
     "lucide-react": "^0.554.0",
     "next": "16.0.3",
