@@ -19,6 +19,10 @@ const scanStore = new Map<string, {
   createdAt: Date;
 }>();
 
+// Rate limiting: track concurrent scans
+let activeScanCount = 0;
+const MAX_CONCURRENT_SCANS = 3;
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -28,6 +32,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'Domain is required' },
         { status: 400 }
+      );
+    }
+
+    // Check rate limit
+    if (activeScanCount >= MAX_CONCURRENT_SCANS) {
+      return NextResponse.json(
+        { error: `Server is currently processing ${activeScanCount} generation${activeScanCount > 1 ? 's' : ''}. Please try again in a few minutes.` },
+        { status: 503 }
       );
     }
 
@@ -42,17 +54,27 @@ export async function POST(request: NextRequest) {
       createdAt: new Date(),
     });
 
+    // Increment active scan count
+    activeScanCount++;
+    console.log(`[Rate Limiter] Active scans: ${activeScanCount}/${MAX_CONCURRENT_SCANS}`);
+
     // Start processing in background (works on Railway - not serverless!)
-    processGeneration(scanId, domain, topics || []).catch(error => {
-      console.error('Generation error:', error);
-      scanStore.set(scanId, {
-        status: 'error',
-        progress: 0,
-        currentStep: 'Error occurred',
-        error: error instanceof Error ? error.message : 'Unknown error',
-        createdAt: new Date(),
+    processGeneration(scanId, domain, topics || [])
+      .catch(error => {
+        console.error('Generation error:', error);
+        scanStore.set(scanId, {
+          status: 'error',
+          progress: 0,
+          currentStep: 'Error occurred',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          createdAt: new Date(),
+        });
+      })
+      .finally(() => {
+        // Always decrement count when done (success or error)
+        activeScanCount--;
+        console.log(`[Rate Limiter] Active scans: ${activeScanCount}/${MAX_CONCURRENT_SCANS}`);
       });
-    });
 
     return NextResponse.json({ scanId });
   } catch (error) {

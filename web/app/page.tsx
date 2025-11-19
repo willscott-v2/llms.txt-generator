@@ -28,7 +28,8 @@ export default function Home() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to start generation');
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to start generation');
       }
 
       const { scanId } = await response.json();
