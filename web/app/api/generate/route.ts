@@ -265,6 +265,7 @@ async function processGeneration(scanId: string, domain: string, topics: string[
       crawlResult.pages,
       process.env.OPENAI_API_KEY,
       logger,
+      crawlResult.domain,
       topics.length > 0 ? topics : undefined,
       priorityUrls.length > 0 ? priorityUrls : undefined
     );
@@ -284,6 +285,15 @@ async function processGeneration(scanId: string, domain: string, topics: string[
     );
     logger.success(`Found ${discoveryResult.offsiteContent.length} offsite resources`);
 
+    // Merge external priority content with discovered offsite content
+    const allOffsiteContent = [
+      ...analysisResult.externalPriorityContent,
+      ...discoveryResult.offsiteContent,
+    ];
+    if (analysisResult.externalPriorityContent.length > 0) {
+      logger.success(`Merged ${analysisResult.externalPriorityContent.length} external priority URLs with offsite content`);
+    }
+
     // Step 4: Generating
     updateStatus('generating', 85, 'Generating LLMS.txt file...');
     logger.info('Generating LLMS.txt...');
@@ -291,7 +301,7 @@ async function processGeneration(scanId: string, domain: string, topics: string[
       crawlResult.domain,
       brandName,
       analysisResult.clusters,
-      discoveryResult.offsiteContent,
+      allOffsiteContent,
       crawlResult.pages,
       logger,
       recencyAnalysis

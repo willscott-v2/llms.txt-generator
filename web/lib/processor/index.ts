@@ -188,7 +188,7 @@ async function main() {
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
     let topicsAccepted = false;
-    let analysisResult = await analyzeContent(crawlResult.pages, openaiKey, logger, userTopics);
+    let analysisResult = await analyzeContent(crawlResult.pages, openaiKey, logger, crawlResult.domain, userTopics);
 
     // Loop until user accepts the topics (or auto-accept if flag is set)
     if (autoAccept) {
@@ -207,7 +207,7 @@ async function main() {
 
         if (!topicsAccepted) {
           logger.info('Regenerating topics...');
-          analysisResult = await analyzeContent(crawlResult.pages, openaiKey, logger, userTopics);
+          analysisResult = await analyzeContent(crawlResult.pages, openaiKey, logger, crawlResult.domain, userTopics);
         }
       }
     }

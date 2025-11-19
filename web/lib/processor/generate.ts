@@ -273,19 +273,49 @@ export function generateLLMSTxtFile(content: LLMSTxtContent): string {
     lines.push('High-quality third-party resources related to our expertise:');
     lines.push('');
 
-    const byCluster = groupByCluster(content.offsiteResources);
+    // Separate priority and auto-discovered resources
+    const priorityResources = content.offsiteResources.filter(r => r.isPriority);
+    const autoDiscoveredResources = content.offsiteResources.filter(r => !r.isPriority);
 
-    for (const [clusterName, resources] of byCluster) {
-      lines.push(`### ${clusterName}`);
+    // Show priority resources first
+    if (priorityResources.length > 0) {
+      lines.push('### Client Priority Resources');
+      lines.push('');
+      lines.push('*Curated external resources specified as high-priority by the client:*');
       lines.push('');
 
-      for (const resource of resources) {
-        lines.push(`- **[${resource.title}](${resource.url})**`);
-        lines.push(`  *Source: ${resource.source} | Type: ${resource.type} | Score: ${resource.score.total}/100*`);
+      for (const resource of priorityResources) {
+        const priorityBadge = ' ⭐ *Client Priority*';
+        lines.push(`- **[${resource.title}](${resource.url})**${priorityBadge}`);
+        lines.push(`  *Source: ${resource.source}*`);
         if (resource.description) {
           lines.push(`  ${resource.description}`);
         }
         lines.push('');
+      }
+    }
+
+    // Show auto-discovered resources by cluster
+    if (autoDiscoveredResources.length > 0) {
+      if (priorityResources.length > 0) {
+        lines.push('### Auto-Discovered Content');
+        lines.push('');
+      }
+
+      const byCluster = groupByCluster(autoDiscoveredResources);
+
+      for (const [clusterName, resources] of byCluster) {
+        lines.push(`#### ${clusterName}`);
+        lines.push('');
+
+        for (const resource of resources) {
+          lines.push(`- **[${resource.title}](${resource.url})**`);
+          lines.push(`  *Source: ${resource.source} | Type: ${resource.type} | Score: ${resource.score.total}/100*`);
+          if (resource.description) {
+            lines.push(`  ${resource.description}`);
+          }
+          lines.push('');
+        }
       }
     }
   }

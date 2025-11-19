@@ -63,6 +63,7 @@ export interface AnalysisResult {
   topics: Topic[];
   clusters: ContentCluster[];
   hubPages: HubPage[];
+  externalPriorityContent: OffsiteContent[]; // External priority URLs
   analyzedAt: string;
 }
 
@@ -86,6 +87,7 @@ export interface OffsiteContent {
   clusterId: string;
   clusterName: string;
   score: OffsiteScore;
+  isPriority?: boolean; // Client-specified priority external URL
 }
 
 export interface DiscoveryResult {

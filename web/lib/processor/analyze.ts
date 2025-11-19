@@ -6,6 +6,8 @@ import type {
   HubPage,
   PageScore,
   AnalysisResult,
+  OffsiteContent,
+  OffsiteScore,
   Logger,
 } from './types.js';
 
@@ -41,6 +43,7 @@ export async function analyzeContent(
   pages: CrawledPage[],
   apiKey: string,
   logger: Logger,
+  targetDomain: string,
   userTopics?: string[],
   priorityUrls?: string[]
 ): Promise<AnalysisResult> {
@@ -58,15 +61,26 @@ export async function analyzeContent(
   const clusters = await clusterPages(pages, topics, openai, logger);
   logger.success(`Created ${clusters.length} content clusters`);
 
-  // Step 3: Score hub pages
+  // Step 3: Score hub pages and process priority URLs
   logger.info('Step 3: Scoring hub pages...');
-  const hubPages = await scoreHubPages(clusters, openai, logger, pages, priorityUrls);
+  const { hubPages, externalPriorityContent } = await scoreHubPages(
+    clusters,
+    openai,
+    logger,
+    pages,
+    targetDomain,
+    priorityUrls
+  );
   logger.success(`Identified ${hubPages.length} hub pages`);
+  if (externalPriorityContent.length > 0) {
+    logger.success(`Identified ${externalPriorityContent.length} external priority URLs`);
+  }
 
   return {
     topics,
     clusters,
     hubPages,
+    externalPriorityContent,
     analyzedAt: new Date().toISOString(),
   };
 }
@@ -208,9 +222,11 @@ async function scoreHubPages(
   openai: OpenAI,
   logger: Logger,
   allPages: CrawledPage[],
+  targetDomain: string,
   priorityUrls?: string[]
-): Promise<HubPage[]> {
+): Promise<{ hubPages: HubPage[]; externalPriorityContent: OffsiteContent[] }> {
   const allHubPages: HubPage[] = [];
+  const externalPriorityContent: OffsiteContent[] = [];
 
   for (const cluster of clusters) {
     if (cluster.pages.length === 0) {
@@ -262,53 +278,110 @@ async function scoreHubPages(
     for (const priorityUrl of priorityUrls) {
       const normalized = normalizeUrl(priorityUrl);
 
-      // Skip if already in hub pages
-      if (existingHubUrls.has(normalized)) {
-        // Mark existing hub page as priority
-        const existingHub = allHubPages.find(hp => normalizeUrl(hp.url) === normalized);
-        if (existingHub) {
-          existingHub.isPriority = true;
-          logger.info(`Priority URL already in hub pages: ${priorityUrl}`);
+      // Check if this URL is from the target domain
+      const isInternal = isUrlFromDomain(priorityUrl, targetDomain);
+
+      if (isInternal) {
+        // INTERNAL PRIORITY URL - add to hub pages
+
+        // Skip if already in hub pages
+        if (existingHubUrls.has(normalized)) {
+          // Mark existing hub page as priority
+          const existingHub = allHubPages.find(hp => normalizeUrl(hp.url) === normalized);
+          if (existingHub) {
+            existingHub.isPriority = true;
+            logger.info(`Priority URL already in hub pages: ${priorityUrl}`);
+          }
+          continue;
         }
-        continue;
-      }
 
-      // Find the page in all pages
-      const page = allPages.find(p => normalizeUrl(p.url) === normalized);
-      if (!page) {
-        logger.warning(`Priority URL not found in crawled pages: ${priorityUrl}`);
-        continue;
-      }
-
-      // Find best matching cluster for this page
-      let bestCluster = clusters[0]; // Default to first cluster
-      for (const cluster of clusters) {
-        const clusterPage = cluster.pages.find(p => normalizeUrl(p.url) === normalized);
-        if (clusterPage) {
-          bestCluster = cluster;
-          break;
+        // Find the page in all pages
+        const page = allPages.find(p => normalizeUrl(p.url) === normalized);
+        if (!page) {
+          logger.warning(`Priority URL not found in crawled pages: ${priorityUrl}`);
+          continue;
         }
+
+        // Find best matching cluster for this page
+        let bestCluster = clusters[0]; // Default to first cluster
+        for (const cluster of clusters) {
+          const clusterPage = cluster.pages.find(p => normalizeUrl(p.url) === normalized);
+          if (clusterPage) {
+            bestCluster = cluster;
+            break;
+          }
+        }
+
+        // Score the priority page
+        logger.info(`Scoring priority URL: ${priorityUrl}`);
+        const score = await scorePage(page, bestCluster.name, openai, logger);
+
+        const priorityHubPage: HubPage = {
+          url: page.url,
+          title: page.title,
+          clusterId: bestCluster.id,
+          clusterName: bestCluster.name,
+          score,
+          citationGuidance: generateCitationGuidance(page, score),
+          keyPoints: extractKeyPoints(page),
+          isPriority: true,
+        };
+
+        allHubPages.push(priorityHubPage);
+        bestCluster.hubPages.push(priorityHubPage);
+
+        logger.success(`Added priority URL: ${page.title} (score: ${score.total}/100)`);
+      } else {
+        // EXTERNAL PRIORITY URL - add to offsite content
+
+        // Find the page in all pages
+        const page = allPages.find(p => normalizeUrl(p.url) === normalized);
+        if (!page) {
+          logger.warning(`External priority URL not found in crawled pages: ${priorityUrl}`);
+          continue;
+        }
+
+        // Find best matching cluster for context
+        let bestCluster = clusters[0]; // Default to first cluster
+        for (const cluster of clusters) {
+          const clusterPage = cluster.pages.find(p => normalizeUrl(p.url) === normalized);
+          if (clusterPage) {
+            bestCluster = cluster;
+            break;
+          }
+        }
+
+        // Extract source domain
+        let sourceDomain = '';
+        try {
+          sourceDomain = new URL(priorityUrl).hostname.replace('www.', '');
+        } catch {
+          sourceDomain = 'External Source';
+        }
+
+        // Create offsite content entry
+        const externalPriority: OffsiteContent = {
+          title: page.title,
+          url: page.url,
+          type: 'article', // Default type
+          source: sourceDomain,
+          description: page.content.substring(0, 150) + '...',
+          clusterId: bestCluster.id,
+          clusterName: bestCluster.name,
+          score: {
+            relevance: 20,
+            salience: 20,
+            engagement: 20,
+            recency: 20,
+            authority: 20,
+            total: 100,
+          },
+          isPriority: true,
+        };
+
+        externalPriorityContent.push(externalPriority);
+        logger.success(`Added external priority URL: ${page.title}`);
       }
-
-      // Score the priority page
-      logger.info(`Scoring priority URL: ${priorityUrl}`);
-      const score = await scorePage(page, bestCluster.name, openai, logger);
-
-      const priorityHubPage: HubPage = {
-        url: page.url,
-        title: page.title,
-        clusterId: bestCluster.id,
-        clusterName: bestCluster.name,
-        score,
-        citationGuidance: generateCitationGuidance(page, score),
-        keyPoints: extractKeyPoints(page),
-        isPriority: true,
-      };
-
-      allHubPages.push(priorityHubPage);
-      bestCluster.hubPages.push(priorityHubPage);
-
-      logger.success(`Added priority URL: ${page.title} (score: ${score.total}/100)`);
     }
 
     // Re-sort: priority pages first, then by score
@@ -319,7 +392,7 @@ async function scoreHubPages(
     });
   }
 
-  return allHubPages;
+  return { hubPages: allHubPages, externalPriorityContent };
 }
 
 /**
@@ -333,6 +406,19 @@ function normalizeUrl(url: string): string {
     return normalized.toLowerCase();
   } catch {
     return url.toLowerCase();
+  }
+}
+
+/**
+ * Check if a URL is from a specific domain
+ */
+function isUrlFromDomain(url: string, targetDomain: string): boolean {
+  try {
+    const urlHostname = new URL(url).hostname.replace('www.', '');
+    const targetHostname = targetDomain.replace('www.', '').replace(/^https?:\/\//, '');
+    return urlHostname === targetHostname;
+  } catch {
+    return false;
   }
 }
 
