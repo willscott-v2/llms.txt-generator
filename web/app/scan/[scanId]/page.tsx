@@ -282,6 +282,7 @@ export default function ScanPage() {
         user="anonymous"
         metadata={{ scanId, page: 'results' }}
         themeColor="#4f46e5"
+        apiPath="/api/feedback"
       />
     </div>
   );
