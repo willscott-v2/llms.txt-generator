@@ -173,4 +173,5 @@ export interface Logger {
   error: (message: string, error?: Error) => void;
   success: (message: string) => void;
   info: (message: string) => void;
+  warning: (message: string) => void;
 }

@@ -28,6 +28,7 @@ const logger: Logger = {
   },
   success: (msg: string) => console.log(`[${new Date().toISOString()}] ✅ ${msg}`),
   info: (msg: string) => console.log(`[${new Date().toISOString()}] ℹ️  ${msg}`),
+  warning: (msg: string) => console.warn(`[${new Date().toISOString()}] ⚠️  ${msg}`),
 };
 
 // Helper function to parse command line arguments

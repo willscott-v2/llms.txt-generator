@@ -11,6 +11,32 @@ import type {
 
 const GPT_MODEL = 'gpt-5'; // Using GPT-5 for lower token costs
 
+// Retry helper for rate limit handling
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  logger: Logger,
+  maxRetries = 5
+): Promise<T> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      const isRateLimitError = error?.status === 429 || error?.code === 'rate_limit_exceeded';
+      const isLastAttempt = attempt === maxRetries - 1;
+
+      if (!isRateLimitError || isLastAttempt) {
+        throw error;
+      }
+
+      // Exponential backoff: 2^attempt * 1000ms (1s, 2s, 4s, 8s, 16s)
+      const delay = Math.pow(2, attempt) * 1000;
+      logger.warning(`Rate limit hit, retrying in ${delay / 1000}s (attempt ${attempt + 1}/${maxRetries})...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  throw new Error('Max retries exceeded');
+}
+
 export async function analyzeContent(
   pages: CrawledPage[],
   apiKey: string,
@@ -89,11 +115,23 @@ Return your response as a JSON array of topics in this exact format:
   ]
 }`;
 
-  const response = await openai.chat.completions.create({
-    model: GPT_MODEL,
-    messages: [{ role: 'user', content: prompt }],
-    response_format: { type: 'json_object' },
-  });
+  // Dummy logger for this function (since we don't have access to the main logger here)
+  const dummyLogger = {
+    info: () => {},
+    success: () => {},
+    error: () => {},
+    warning: (msg: string) => console.warn(msg),
+    log: () => {},
+  };
+
+  const response = await retryWithBackoff(
+    () => openai.chat.completions.create({
+      model: GPT_MODEL,
+      messages: [{ role: 'user', content: prompt }],
+      response_format: { type: 'json_object' },
+    }),
+    dummyLogger
+  );
 
   const result = JSON.parse(response.choices[0].message.content || '{}');
   return result.topics || [];
@@ -137,11 +175,14 @@ Return your response as a JSON array in this exact format:
   ]
 }`;
 
-    const response = await openai.chat.completions.create({
-      model: GPT_MODEL,
-      messages: [{ role: 'user', content: prompt }],
-      response_format: { type: 'json_object' },
-    });
+    const response = await retryWithBackoff(
+      () => openai.chat.completions.create({
+        model: GPT_MODEL,
+        messages: [{ role: 'user', content: prompt }],
+        response_format: { type: 'json_object' },
+      }),
+      logger
+    );
 
     const result = JSON.parse(response.choices[0].message.content || '{}');
     const assignments = result.assignments || [];
@@ -180,7 +221,7 @@ async function scoreHubPages(
     const pagesToScore = cluster.pages.slice(0, 10);
 
     for (const page of pagesToScore) {
-      const score = await scorePage(page, cluster.name, openai);
+      const score = await scorePage(page, cluster.name, openai, logger);
 
       if (score.total >= 40) { // Only include pages with decent scores
         const hubPage: HubPage = {
@@ -214,7 +255,8 @@ async function scoreHubPages(
 async function scorePage(
   page: CrawledPage,
   clusterName: string,
-  openai: OpenAI
+  openai: OpenAI,
+  logger: Logger
 ): Promise<PageScore> {
   // Truncate content to avoid token limits
   const contentPreview = page.markdown.slice(0, 4000);
@@ -265,11 +307,14 @@ Return your response as JSON in this exact format:
   "reasoning": "Brief explanation of scores"
 }`;
 
-  const response = await openai.chat.completions.create({
-    model: GPT_MODEL,
-    messages: [{ role: 'user', content: prompt }],
-    response_format: { type: 'json_object' },
-  });
+  const response = await retryWithBackoff(
+    () => openai.chat.completions.create({
+      model: GPT_MODEL,
+      messages: [{ role: 'user', content: prompt }],
+      response_format: { type: 'json_object' },
+    }),
+    logger
+  );
 
   const result = JSON.parse(response.choices[0].message.content || '{}');
 
