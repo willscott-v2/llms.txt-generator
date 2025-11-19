@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'crypto';
-import { crawlWebsite, extractBrandAndAuthors } from '@/lib/processor/crawl';
+import { crawlWebsite, extractBrandAndAuthors, ensurePriorityUrlsCrawled } from '@/lib/processor/crawl';
 import { analyzeContent } from '@/lib/processor/analyze';
 import { discoverOffsiteContent } from '@/lib/processor/discover';
 import { discoverSocialProfiles, mergeSocialProfiles } from '@/lib/processor/social-discovery';
 import { generateLLMSTxt as generateContent, generateLLMSTxtFile } from '@/lib/processor/generate';
+import { analyzeRecency } from '@/lib/processor/recency-analyzer';
 
 // In-memory store for scan status (works on Railway!)
 const scanStore = new Map<string, {
@@ -44,7 +45,7 @@ function getActiveScansCount(): number {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { domain, topics } = body;
+    const { domain, topics, priorityUrls } = body;
 
     if (!domain) {
       return NextResponse.json(
@@ -77,7 +78,7 @@ export async function POST(request: NextRequest) {
     console.log(`[Rate Limiter] Active scans: ${activeScanCount}/${MAX_CONCURRENT_SCANS}`);
 
     // Start processing in background (works on Railway - not serverless!)
-    processGeneration(scanId, domain, topics || [])
+    processGeneration(scanId, domain, topics || [], priorityUrls || [])
       .catch(error => {
         console.error('Generation error:', error);
         scanStore.set(scanId, {
@@ -184,7 +185,7 @@ export async function DELETE(request: NextRequest) {
   );
 }
 
-async function processGeneration(scanId: string, domain: string, topics: string[]) {
+async function processGeneration(scanId: string, domain: string, topics: string[], priorityUrls: string[]) {
   const updateStatus = (
     status: 'crawling' | 'analyzing' | 'discovering' | 'generating' | 'completed' | 'error',
     progress: number,
@@ -224,8 +225,20 @@ async function processGeneration(scanId: string, domain: string, topics: string[
     // Step 1: Crawling
     updateStatus('crawling', 10, 'Crawling website pages...');
     logger.info(`Starting crawl for ${domain}`);
-    const crawlResult = await crawlWebsite(domain, process.env.FIRECRAWL_API_KEY, logger);
+    let crawlResult = await crawlWebsite(domain, process.env.FIRECRAWL_API_KEY, logger);
     logger.success(`Crawled ${crawlResult.pages.length} pages`);
+
+    // Ensure priority URLs are crawled
+    if (priorityUrls.length > 0) {
+      updateStatus('crawling', 15, 'Ensuring priority URLs are crawled...');
+      crawlResult.pages = await ensurePriorityUrlsCrawled(
+        crawlResult.pages,
+        priorityUrls,
+        process.env.FIRECRAWL_API_KEY,
+        logger
+      );
+      logger.success(`Total pages including priority URLs: ${crawlResult.pages.length}`);
+    }
 
     // Discover social profiles
     updateStatus('crawling', 20, 'Discovering social profiles...');
@@ -241,6 +254,10 @@ async function processGeneration(scanId: string, domain: string, topics: string[
     const mergedSocials = mergeSocialProfiles(htmlProfiles, serpSocialProfiles);
     crawlResult.pages[0].socialProfiles = mergedSocials;
 
+    // Analyze recency
+    updateStatus('analyzing', 30, 'Analyzing publishing frequency and recent content...');
+    const recencyAnalysis = analyzeRecency(crawlResult.pages, logger);
+
     // Step 2: Analyzing
     updateStatus('analyzing', 40, 'Analyzing content and identifying topics...');
     logger.info('Analyzing content...');
@@ -248,7 +265,8 @@ async function processGeneration(scanId: string, domain: string, topics: string[
       crawlResult.pages,
       process.env.OPENAI_API_KEY,
       logger,
-      topics.length > 0 ? topics : undefined
+      topics.length > 0 ? topics : undefined,
+      priorityUrls.length > 0 ? priorityUrls : undefined
     );
     logger.success(`Identified ${analysisResult.topics.length} topics`);
 
@@ -275,7 +293,8 @@ async function processGeneration(scanId: string, domain: string, topics: string[
       analysisResult.clusters,
       discoveryResult.offsiteContent,
       crawlResult.pages,
-      logger
+      logger,
+      recencyAnalysis
     );
     const llmsTxtFile = generateLLMSTxtFile(llmsTxtContent);
     logger.success('LLMS.txt generated successfully');

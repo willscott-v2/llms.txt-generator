@@ -7,6 +7,7 @@ export default function Home() {
   const router = useRouter();
   const [domain, setDomain] = useState('');
   const [topics, setTopics] = useState('');
+  const [priorityUrls, setPriorityUrls] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -24,6 +25,7 @@ export default function Home() {
         body: JSON.stringify({
           domain,
           topics: topics.split(',').map(t => t.trim()).filter(t => t),
+          priorityUrls: priorityUrls.split('\n').map(u => u.trim()).filter(u => u),
         }),
       });
 
@@ -88,6 +90,24 @@ export default function Home() {
                 />
                 <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
                   Comma-separated list of topics to prioritize
+                </p>
+              </div>
+
+              {/* Priority URLs Input */}
+              <div>
+                <label htmlFor="priorityUrls" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Priority URLs (Optional)
+                </label>
+                <textarea
+                  id="priorityUrls"
+                  value={priorityUrls}
+                  onChange={(e) => setPriorityUrls(e.target.value)}
+                  placeholder="https://example.com/important-page&#10;https://example.com/case-study&#10;https://example.com/whitepaper"
+                  rows={4}
+                  className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition resize-vertical"
+                />
+                <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                  One URL per line. These pages will be guaranteed inclusion in the output with their citation scores.
                 </p>
               </div>
 

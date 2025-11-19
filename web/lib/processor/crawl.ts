@@ -228,3 +228,98 @@ export function extractBrandAndAuthors(pages: CrawledPage[]): {
     authorNames: authorNames.slice(0, 5), // Max 5 authors
   };
 }
+
+/**
+ * Ensure priority URLs are included in crawled pages
+ * If a priority URL hasn't been crawled, scrape it individually
+ */
+export async function ensurePriorityUrlsCrawled(
+  existingPages: CrawledPage[],
+  priorityUrls: string[],
+  apiKey: string,
+  logger: Logger
+): Promise<CrawledPage[]> {
+  if (!priorityUrls || priorityUrls.length === 0) {
+    return existingPages;
+  }
+
+  logger.info(`Checking ${priorityUrls.length} priority URLs...`);
+
+  const missingUrls: string[] = [];
+  const normalizedExistingUrls = new Set(
+    existingPages.map(p => normalizeUrl(p.url))
+  );
+
+  // Find priority URLs that weren't crawled
+  for (const priorityUrl of priorityUrls) {
+    const normalized = normalizeUrl(priorityUrl);
+    if (!normalizedExistingUrls.has(normalized)) {
+      missingUrls.push(priorityUrl);
+    }
+  }
+
+  if (missingUrls.length === 0) {
+    logger.info('All priority URLs already crawled');
+    return existingPages;
+  }
+
+  logger.info(`Scraping ${missingUrls.length} missing priority URLs...`);
+
+  const firecrawl = new FirecrawlApp({ apiKey });
+  const newPages: CrawledPage[] = [];
+
+  // Scrape each missing URL individually
+  for (const url of missingUrls) {
+    try {
+      logger.info(`Scraping priority URL: ${url}`);
+
+      const result = await firecrawl.scrape(url, {
+        formats: ['markdown', 'html'],
+        includeTags: ['h1', 'h2', 'h3', 'a'],
+        excludeTags: ['nav', 'footer', 'script', 'style'],
+        waitFor: 1000,
+      });
+
+      if (result) {
+        const h1Tags = extractH1Tags(result.html || '');
+        const outboundLinks = extractOutboundLinks(result.html || '', url);
+        const socialProfiles = detectSocialProfiles(outboundLinks);
+
+        newPages.push({
+          url: result.metadata?.url || url,
+          title: result.metadata?.title || 'Untitled',
+          h1Tags,
+          content: result.markdown || '',
+          markdown: result.markdown || '',
+          outboundLinks,
+          socialProfiles: socialProfiles.length > 0 ? socialProfiles : undefined,
+        });
+
+        logger.success(`Scraped: ${result.metadata?.title || url}`);
+      } else {
+        logger.warning(`Failed to scrape priority URL: ${url}`);
+      }
+    } catch (error) {
+      logger.warning(`Error scraping priority URL ${url}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  logger.success(`Added ${newPages.length} priority URLs to crawl results`);
+
+  return [...existingPages, ...newPages];
+}
+
+/**
+ * Normalize URL for comparison (remove trailing slashes, fragments, query params)
+ */
+function normalizeUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    // Remove trailing slash, fragment, and query params
+    let normalized = `${parsed.protocol}//${parsed.hostname}${parsed.pathname}`;
+    normalized = normalized.replace(/\/$/, '');
+    return normalized.toLowerCase();
+  } catch {
+    return url.toLowerCase();
+  }
+}

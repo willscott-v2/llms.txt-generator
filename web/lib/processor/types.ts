@@ -47,6 +47,7 @@ export interface HubPage {
   score: PageScore;
   citationGuidance: string;
   keyPoints: string[];
+  isPriority?: boolean; // Marks client-specified priority URLs
 }
 
 export interface ContentCluster {
@@ -127,6 +128,7 @@ export interface LLMSTxtContent {
   testimonials?: CustomerTestimonial[];
   clusters: ContentCluster[];
   offsiteResources: OffsiteContent[];
+  recentUpdates?: RecencyAnalysis;
   contactInfo: {
     website: string;
     email?: string;
@@ -160,6 +162,24 @@ export interface PipelineOutput {
   llmsTxtContent: LLMSTxtContent;
   auditReport: AuditReport;
   llmsTxtFile: string;
+}
+
+// Recent Updates Types
+export interface RecentContent {
+  url: string;
+  title: string;
+  publishedDate: Date;
+  category: 'news' | 'blog' | 'page';
+  excerpt?: string;
+}
+
+export interface RecencyAnalysis {
+  recencyWindowDays: number;
+  publishingFrequency: 'high' | 'medium' | 'low' | 'static';
+  recentNews: RecentContent[];
+  recentBlogPosts: RecentContent[];
+  recentPages: RecentContent[];
+  analyzedAt: string;
 }
 
 // Utility Types

@@ -34,7 +34,8 @@ export function generateLLMSTxt(
   clusters: ContentCluster[],
   offsiteContent: OffsiteContent[],
   pages: CrawledPage[],
-  logger: Logger
+  logger: Logger,
+  recentUpdates?: import('./types.js').RecencyAnalysis
 ): LLMSTxtContent {
   logger.info('Generating LLMS.txt content...');
 
@@ -78,6 +79,7 @@ export function generateLLMSTxt(
     testimonials: testimonials.length > 0 ? testimonials : undefined,
     clusters,
     offsiteResources: offsiteContent,
+    recentUpdates,
     contactInfo,
     recommendations,
     generatedAt: new Date().toISOString(),
@@ -174,6 +176,61 @@ export function generateLLMSTxtFile(content: LLMSTxtContent): string {
     }
   }
 
+  // Recent Updates
+  if (content.recentUpdates) {
+    const { recentNews, recentBlogPosts, recentPages, recencyWindowDays, publishingFrequency } = content.recentUpdates;
+    const hasRecent = recentNews.length > 0 || recentBlogPosts.length > 0 || recentPages.length > 0;
+
+    if (hasRecent) {
+      lines.push('## Recent Updates');
+      lines.push('');
+      lines.push(`*Recency window: Last ${recencyWindowDays} days (auto-detected from ${publishingFrequency} publishing frequency)*`);
+      lines.push('');
+
+      // Latest News
+      if (recentNews.length > 0) {
+        lines.push('### Latest News');
+        lines.push('');
+        for (const news of recentNews.slice(0, 5)) {
+          const dateStr = new Date(news.publishedDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+          lines.push(`- **[${news.title}](${news.url})** - ${dateStr}`);
+          if (news.excerpt) {
+            lines.push(`  *${news.excerpt}*`);
+          }
+        }
+        lines.push('');
+      }
+
+      // Recent Blog Posts
+      if (recentBlogPosts.length > 0) {
+        lines.push('### Recent Blog Posts');
+        lines.push('');
+        for (const post of recentBlogPosts.slice(0, 5)) {
+          const dateStr = new Date(post.publishedDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+          lines.push(`- **[${post.title}](${post.url})** - ${dateStr}`);
+          if (post.excerpt) {
+            lines.push(`  *${post.excerpt}*`);
+          }
+        }
+        lines.push('');
+      }
+
+      // New Pages
+      if (recentPages.length > 0) {
+        lines.push('### New Pages');
+        lines.push('');
+        for (const page of recentPages.slice(0, 5)) {
+          const dateStr = new Date(page.publishedDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+          lines.push(`- **[${page.title}](${page.url})** - ${dateStr}`);
+          if (page.excerpt) {
+            lines.push(`  *${page.excerpt}*`);
+          }
+        }
+        lines.push('');
+      }
+    }
+  }
+
   // Content Clusters & Hub Pages
   lines.push('## Priority Topics & Citation-Worthy Content');
   lines.push('');
@@ -191,7 +248,8 @@ export function generateLLMSTxtFile(content: LLMSTxtContent): string {
     lines.push('');
 
     for (const hubPage of cluster.hubPages) {
-      lines.push(`**[${hubPage.title}](${hubPage.url})**`);
+      const priorityBadge = hubPage.isPriority ? ' ⭐ *Client Priority*' : '';
+      lines.push(`**[${hubPage.title}](${hubPage.url})**${priorityBadge}`);
       lines.push(`*Citation Score: ${hubPage.score.total}/100*`);
       lines.push('');
       lines.push(`- ${hubPage.citationGuidance}`);

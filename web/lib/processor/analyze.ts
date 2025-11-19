@@ -41,7 +41,8 @@ export async function analyzeContent(
   pages: CrawledPage[],
   apiKey: string,
   logger: Logger,
-  userTopics?: string[]
+  userTopics?: string[],
+  priorityUrls?: string[]
 ): Promise<AnalysisResult> {
   const openai = new OpenAI({ apiKey });
 
@@ -59,7 +60,7 @@ export async function analyzeContent(
 
   // Step 3: Score hub pages
   logger.info('Step 3: Scoring hub pages...');
-  const hubPages = await scoreHubPages(clusters, openai, logger);
+  const hubPages = await scoreHubPages(clusters, openai, logger, pages, priorityUrls);
   logger.success(`Identified ${hubPages.length} hub pages`);
 
   return {
@@ -205,7 +206,9 @@ Return your response as a JSON array in this exact format:
 async function scoreHubPages(
   clusters: ContentCluster[],
   openai: OpenAI,
-  logger: Logger
+  logger: Logger,
+  allPages: CrawledPage[],
+  priorityUrls?: string[]
 ): Promise<HubPage[]> {
   const allHubPages: HubPage[] = [];
 
@@ -249,7 +252,88 @@ async function scoreHubPages(
   // Sort all hub pages by score
   allHubPages.sort((a, b) => b.score.total - a.score.total);
 
+  // Handle priority URLs - ensure they're included even if they didn't score high
+  if (priorityUrls && priorityUrls.length > 0) {
+    logger.info(`Processing ${priorityUrls.length} priority URLs...`);
+
+    const normalizedPriorityUrls = priorityUrls.map(url => normalizeUrl(url));
+    const existingHubUrls = new Set(allHubPages.map(hp => normalizeUrl(hp.url)));
+
+    for (const priorityUrl of priorityUrls) {
+      const normalized = normalizeUrl(priorityUrl);
+
+      // Skip if already in hub pages
+      if (existingHubUrls.has(normalized)) {
+        // Mark existing hub page as priority
+        const existingHub = allHubPages.find(hp => normalizeUrl(hp.url) === normalized);
+        if (existingHub) {
+          existingHub.isPriority = true;
+          logger.info(`Priority URL already in hub pages: ${priorityUrl}`);
+        }
+        continue;
+      }
+
+      // Find the page in all pages
+      const page = allPages.find(p => normalizeUrl(p.url) === normalized);
+      if (!page) {
+        logger.warning(`Priority URL not found in crawled pages: ${priorityUrl}`);
+        continue;
+      }
+
+      // Find best matching cluster for this page
+      let bestCluster = clusters[0]; // Default to first cluster
+      for (const cluster of clusters) {
+        const clusterPage = cluster.pages.find(p => normalizeUrl(p.url) === normalized);
+        if (clusterPage) {
+          bestCluster = cluster;
+          break;
+        }
+      }
+
+      // Score the priority page
+      logger.info(`Scoring priority URL: ${priorityUrl}`);
+      const score = await scorePage(page, bestCluster.name, openai, logger);
+
+      const priorityHubPage: HubPage = {
+        url: page.url,
+        title: page.title,
+        clusterId: bestCluster.id,
+        clusterName: bestCluster.name,
+        score,
+        citationGuidance: generateCitationGuidance(page, score),
+        keyPoints: extractKeyPoints(page),
+        isPriority: true,
+      };
+
+      allHubPages.push(priorityHubPage);
+      bestCluster.hubPages.push(priorityHubPage);
+
+      logger.success(`Added priority URL: ${page.title} (score: ${score.total}/100)`);
+    }
+
+    // Re-sort: priority pages first, then by score
+    allHubPages.sort((a, b) => {
+      if (a.isPriority && !b.isPriority) return -1;
+      if (!a.isPriority && b.isPriority) return 1;
+      return b.score.total - a.score.total;
+    });
+  }
+
   return allHubPages;
+}
+
+/**
+ * Normalize URL for comparison (remove trailing slashes, fragments, query params)
+ */
+function normalizeUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    let normalized = `${parsed.protocol}//${parsed.hostname}${parsed.pathname}`;
+    normalized = normalized.replace(/\/$/, '');
+    return normalized.toLowerCase();
+  } catch {
+    return url.toLowerCase();
+  }
 }
 
 async function scorePage(
