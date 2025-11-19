@@ -29,53 +29,40 @@ export async function discoverOffsiteContent(
     { site: 'spotify.com', type: 'podcast' as const },
   ];
 
-  for (const cluster of clusters) {
+  // Process all clusters in parallel for better performance
+  const clusterPromises = clusters.map(async (cluster) => {
     logger.info(`Searching for ${cluster.name} content...`);
 
-    // Search each platform for brand + cluster topic
+    const searchPromises: Promise<OffsiteContent[]>[] = [];
+
+    // Create all search promises for this cluster
     for (const platform of platforms) {
-      const query = `site:${platform.site} "${brandName}" ${cluster.keywords.slice(0, 3).join(' ')}`;
-      const results = await searchSerpAPI(query, apiKey, logger);
+      const promise = (async () => {
+        await delay(Math.random() * 500); // Stagger requests slightly
+        const query = `site:${platform.site} "${brandName}" ${cluster.keywords.slice(0, 3).join(' ')}`;
+        const results = await searchSerpAPI(query, apiKey, logger);
 
-      const scored = scoreAndFilterResults(
-        results,
-        cluster.id,
-        cluster.name,
-        cluster.keywords,
-        ownDomain,
-        platform.type,
-        brandName
-      );
-
-      offsiteContent.push(...scored);
-
-      // Small delay to avoid rate limits
-      await delay(300);
+        return scoreAndFilterResults(
+          results,
+          cluster.id,
+          cluster.name,
+          cluster.keywords,
+          ownDomain,
+          platform.type,
+          brandName
+        );
+      })();
+      searchPromises.push(promise);
     }
 
-    // Also search for brand content on general web (excluding own domain)
-    const generalQuery = `"${brandName}" ${cluster.name} -site:${ownDomain || ''}`;
-    const generalResults = await searchSerpAPI(generalQuery, apiKey, logger);
+    // Add general web search
+    const generalPromise = (async () => {
+      await delay(Math.random() * 500);
+      const generalQuery = `"${brandName}" ${cluster.name} -site:${ownDomain || ''}`;
+      const generalResults = await searchSerpAPI(generalQuery, apiKey, logger);
 
-    const generalScored = scoreAndFilterResults(
-      generalResults,
-      cluster.id,
-      cluster.name,
-      cluster.keywords,
-      ownDomain,
-      undefined,
-      brandName
-    );
-
-    offsiteContent.push(...generalScored);
-
-    // Search for authors + topic (if we have author names)
-    if (authorNames.length > 0 && authorNames.length < 10) { // Only if we have real author names
-      const authorQuery = `"${authorNames[0]}" ${cluster.name} -site:${ownDomain || ''}`;
-      const authorResults = await searchSerpAPI(authorQuery, apiKey, logger);
-
-      const authorScored = scoreAndFilterResults(
-        authorResults,
+      return scoreAndFilterResults(
+        generalResults,
         cluster.id,
         cluster.name,
         cluster.keywords,
@@ -83,13 +70,37 @@ export async function discoverOffsiteContent(
         undefined,
         brandName
       );
+    })();
+    searchPromises.push(generalPromise);
 
-      offsiteContent.push(...authorScored);
+    // Add author search if applicable
+    if (authorNames.length > 0 && authorNames.length < 10) {
+      const authorPromise = (async () => {
+        await delay(Math.random() * 500);
+        const authorQuery = `"${authorNames[0]}" ${cluster.name} -site:${ownDomain || ''}`;
+        const authorResults = await searchSerpAPI(authorQuery, apiKey, logger);
+
+        return scoreAndFilterResults(
+          authorResults,
+          cluster.id,
+          cluster.name,
+          cluster.keywords,
+          ownDomain,
+          undefined,
+          brandName
+        );
+      })();
+      searchPromises.push(authorPromise);
     }
 
-    // Small delay between clusters
-    await delay(500);
-  }
+    // Wait for all searches for this cluster to complete
+    const clusterResults = await Promise.all(searchPromises);
+    return clusterResults.flat();
+  });
+
+  // Wait for all clusters to complete
+  const allResults = await Promise.all(clusterPromises);
+  offsiteContent.push(...allResults.flat());
 
   // Remove duplicates by URL
   const uniqueContent = deduplicateByUrl(offsiteContent);

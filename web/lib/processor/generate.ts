@@ -6,8 +6,27 @@ import type {
   LLMSTxtContent,
   AuditReport,
   SocialProfile,
+  CustomerTestimonial,
   Logger,
 } from './types.js';
+
+// HTML entity decoder
+function decodeHtmlEntities(text: string): string {
+  const entities: Record<string, string> = {
+    '&amp;': '&',
+    '&lt;': '<',
+    '&gt;': '>',
+    '&quot;': '"',
+    '&#39;': "'",
+    '&apos;': "'",
+    '&nbsp;': ' ',
+    '&ndash;': '–',
+    '&mdash;': '—',
+    '&hellip;': '…',
+  };
+
+  return text.replace(/&[a-z0-9#]+;/gi, match => entities[match.toLowerCase()] || match);
+}
 
 export function generateLLMSTxt(
   domain: string,
@@ -45,6 +64,9 @@ export function generateLLMSTxt(
   // Extract content focus areas
   const contentFocusAreas = extractContentFocusAreas(clusters);
 
+  // Extract customers and testimonials
+  const { customers, testimonials } = extractCustomersAndTestimonials(pages);
+
   return {
     brandName,
     organizationOverview,
@@ -52,6 +74,8 @@ export function generateLLMSTxt(
     audienceTaxonomies,
     contentFocusAreas,
     authoritySignals,
+    customers: customers.length > 0 ? customers : undefined,
+    testimonials: testimonials.length > 0 ? testimonials : undefined,
     clusters,
     offsiteResources: offsiteContent,
     contactInfo,
@@ -120,6 +144,31 @@ export function generateLLMSTxtFile(content: LLMSTxtContent): string {
       }
       if (signal.url) {
         lines.push(`  [Learn more](${signal.url})`);
+      }
+      lines.push('');
+    }
+  }
+
+  // Customers
+  if (content.customers && content.customers.length > 0) {
+    lines.push('## Notable Clients & Customers');
+    lines.push('');
+    for (const customer of content.customers.slice(0, 15)) {
+      lines.push(`- ${customer}`);
+    }
+    lines.push('');
+  }
+
+  // Testimonials
+  if (content.testimonials && content.testimonials.length > 0) {
+    lines.push('## Customer Testimonials');
+    lines.push('');
+    for (const testimonial of content.testimonials.slice(0, 5)) {
+      lines.push(`> "${testimonial.quote}"`);
+      lines.push(`> `);
+      lines.push(`> — **${testimonial.customer}**${testimonial.industry ? `, ${testimonial.industry}` : ''}`);
+      if (testimonial.url) {
+        lines.push(`> [View Case Study](${testimonial.url})`);
       }
       lines.push('');
     }
@@ -515,10 +564,12 @@ function generateOverview(
   let description = '';
   let tagline = '';
   let location = '';
+  let yearFounded = '';
+  let entities: string[] = [];
 
   // Extract tagline from H1 tags
   if (homepage && homepage.h1Tags.length > 0) {
-    tagline = homepage.h1Tags[0];
+    tagline = decodeHtmlEntities(homepage.h1Tags[0]);
   }
 
   // Extract location from content
@@ -531,23 +582,55 @@ function generateOverview(
     }
   }
 
-  // Extract description from about page or homepage
-  const sourcePage = aboutPage || homepage;
+  // Extract year founded
+  const yearRegex = /(?:founded|established|since)\s+(?:in\s+)?(\d{4})/i;
+  for (const page of [homepage, aboutPage].filter(Boolean) as CrawledPage[]) {
+    const match = page.content.match(yearRegex);
+    if (match && parseInt(match[1]) > 1900 && parseInt(match[1]) < new Date().getFullYear()) {
+      yearFounded = match[1];
+      break;
+    }
+  }
+
+  // Extract entity-rich content from homepage
+  const sourcePage = homepage || aboutPage;
   if (sourcePage && sourcePage.content.length > 100) {
-    // Split into paragraphs and skip very short ones (likely headings/taglines)
+    // Split into paragraphs and extract substantial, entity-rich ones
     const paragraphs = sourcePage.content
       .split('\n\n')
-      .map(p => p.trim())
-      .filter(p => p.length > 50 && p.length < 500);
+      .map(p => decodeHtmlEntities(p.trim()))
+      .filter(p => p.length > 50 && p.length < 800);
 
-    // Get first substantial paragraph
-    if (paragraphs.length > 0) {
-      description = paragraphs[0];
-      // Clean up common issues
-      description = description
+    // Get first 2-3 substantial paragraphs with entity mentions
+    const entityPatterns = [
+      /\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b/g, // Proper nouns (e.g., "New Orleans", "Google Premier")
+      /\b(?:CEO|CTO|VP|Director|President)\b/gi, // Job titles
+      /\b\d+\+?\s+(?:years?|clients?|projects?|employees?)\b/gi, // Quantifiable entities
+      /\b(?:Inc\.|LLC|Ltd|Corporation)\b/gi, // Company indicators
+    ];
+
+    const richParagraphs = paragraphs.filter(p =>
+      entityPatterns.some(pattern => pattern.test(p))
+    );
+
+    // Use entity-rich paragraphs if found, otherwise use first paragraphs
+    const selectedParagraphs = (richParagraphs.length > 0 ? richParagraphs : paragraphs).slice(0, 3);
+
+    if (selectedParagraphs.length > 0) {
+      description = selectedParagraphs
+        .join('\n\n')
         .replace(/\[.*?\]\(.*?\)/g, '') // Remove markdown links
         .replace(/\s+/g, ' ') // Normalize whitespace
         .trim();
+
+      // Extract notable entities for later use
+      for (const pattern of entityPatterns) {
+        const matches = description.match(pattern);
+        if (matches) {
+          entities.push(...matches.slice(0, 5));
+        }
+      }
+      entities = Array.from(new Set(entities)).slice(0, 10); // Unique entities
     }
   }
 
@@ -573,8 +656,18 @@ function generateOverview(
     parts.push(`${brandName} is a digital marketing agency specializing in ${serviceAreas}, and related services.`);
   }
 
+  // Add location and year founded if available
+  const contextualInfo: string[] = [];
+  if (yearFounded) {
+    contextualInfo.push(`Founded in ${yearFounded}`);
+  }
   if (location) {
-    parts.push(`Based in ${location}, the agency serves clients across multiple industries with data-driven marketing solutions.`);
+    contextualInfo.push(`based in ${location}`);
+  }
+
+  if (contextualInfo.length > 0) {
+    parts.push('');
+    parts.push(`${contextualInfo.join(', ')}.`);
   }
 
   parts.push('');
@@ -784,4 +877,86 @@ function extractContentFocusAreas(clusters: ContentCluster[]): string[] {
   }
 
   return Array.from(focusAreas).sort();
+}
+
+function extractCustomersAndTestimonials(pages: CrawledPage[]): {
+  customers: string[];
+  testimonials: CustomerTestimonial[];
+} {
+  const customers = new Set<string>();
+  const testimonials: CustomerTestimonial[] = [];
+
+  // Find pages likely to contain customer info
+  const caseStudyPages = pages.filter(p =>
+    p.url.toLowerCase().includes('case-study') ||
+    p.url.toLowerCase().includes('case-studies') ||
+    p.url.toLowerCase().includes('portfolio') ||
+    p.url.toLowerCase().includes('clients') ||
+    p.url.toLowerCase().includes('testimonial') ||
+    p.content.toLowerCase().includes('case study')
+  );
+
+  const testimonialPages = pages.filter(p =>
+    p.url.toLowerCase().includes('testimonial') ||
+    p.url.toLowerCase().includes('review') ||
+    p.url.toLowerCase().includes('success') ||
+    p.content.toLowerCase().includes('testimonial')
+  );
+
+  // Extract customer names from case studies
+  for (const page of caseStudyPages.slice(0, 20)) {
+    // Look for company names in titles or H1 tags
+    const titleMatch = page.title.match(/^([A-Z][A-Za-z0-9\s&\-']+?)(?:\s*[\|\-:]|\s+Case Study)/);
+    if (titleMatch && titleMatch[1].length > 3 && titleMatch[1].length < 50) {
+      customers.add(decodeHtmlEntities(titleMatch[1].trim()));
+    }
+
+    // Look for client mentions in content
+    const clientPatterns = [
+      /client:\s*([A-Z][A-Za-z0-9\s&\-']+?)(?:\n|\.|\|)/gi,
+      /for\s+([A-Z][A-Z0-9\s&]{2,40})(?:\s*,|\s+we|\s+to)/g,
+    ];
+
+    for (const pattern of clientPatterns) {
+      const matches = [...page.content.matchAll(pattern)];
+      for (const match of matches.slice(0, 3)) {
+        const name = decodeHtmlEntities(match[1].trim());
+        if (name.length > 3 && name.length < 50 && !/^\d+$/.test(name)) {
+          customers.add(name);
+        }
+      }
+    }
+  }
+
+  // Extract testimonials
+  for (const page of testimonialPages.slice(0, 10)) {
+    // Look for quote patterns
+    const quotePatterns = [
+      /"([^"]{50,400})"\s*[-–—]\s*([A-Z][A-Za-z0-9\s&\-']+?)(?:,\s*([A-Z][A-Za-z\s&]+))?/g,
+      /"([^"]{50,400})"\s*\n\s*([A-Z][A-Za-z0-9\s&\-']+)/g,
+    ];
+
+    for (const pattern of quotePatterns) {
+      const matches = [...page.content.matchAll(pattern)];
+      for (const match of matches.slice(0, 5)) {
+        const quote = decodeHtmlEntities(match[1].trim());
+        const customer = decodeHtmlEntities(match[2].trim());
+        const industry = match[3] ? decodeHtmlEntities(match[3].trim()) : undefined;
+
+        if (quote.length >= 50 && customer.length > 3 && testimonials.length < 10) {
+          testimonials.push({
+            customer,
+            quote,
+            url: page.url,
+            industry,
+          });
+        }
+      }
+    }
+  }
+
+  return {
+    customers: Array.from(customers).sort().slice(0, 25),
+    testimonials: testimonials.slice(0, 5),
+  };
 }

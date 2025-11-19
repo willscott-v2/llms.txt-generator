@@ -109,6 +109,13 @@ export interface AudienceTaxonomy {
   naicsCode: string;
 }
 
+export interface CustomerTestimonial {
+  customer: string;
+  quote: string;
+  url?: string;
+  industry?: string;
+}
+
 export interface LLMSTxtContent {
   brandName: string;
   organizationOverview: string;
@@ -116,6 +123,8 @@ export interface LLMSTxtContent {
   audienceTaxonomies: AudienceTaxonomy[];
   contentFocusAreas: string[];
   authoritySignals: AuthoritySignal[];
+  customers?: string[];
+  testimonials?: CustomerTestimonial[];
   clusters: ContentCluster[];
   offsiteResources: OffsiteContent[];
   contactInfo: {
